@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:int="http://www.springframework.org/schema/integration"
+       xmlns:int-sftp="http://www.springframework.org/schema/integration/sftp"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/integration http://www.springframework.org/schema/integration/spring-integration.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+		http://www.springframework.org/schema/integration/sftp http://www.springframework.org/schema/integration/sftp/spring-integration-sftp.xsd">
+    
+    <context:property-placeholder/>
+    <context:annotation-config />
+
+    <int:channel id="sftpChannel">
+        <int:queue/>
+    </int:channel>
+
+    <bean id="sftpSessionFactory" class="org.springframework.integration.sftp.session.DefaultSftpSessionFactory">
+        <property name="host" value="${host}" />
+        <property name="port" value="${port}" />
+        <property name="user" value="${username}"/>
+        <property name="password" value="${password}" />
+        <property name="allowUnknownKeys" value="true" />
+    </bean>
+    
+    <bean id="cachingSessionFactory" class="org.springframework.integration.file.remote.session.CachingSessionFactory">
+        <constructor-arg ref="sftpSessionFactory"/>
+        <constructor-arg value="20"/>
+        <property name="sessionWaitTimeout" value="30000"/>
+    </bean>
+    
+    <int-sftp:inbound-channel-adapter 
+        channel= "sftpChannel"
+        session-factory="sftpSessionFactory"
+        auto-create-local-directory="true"
+        delete-remote-files="true"
+        remote-directory="${remoteDir}"
+        remote-file-separator="/"
+        local-directory="file:${localDir}"
+        local-filename-generator-expression="payload.getName()"
+        local-filter="simplePatternFileListFilter"
+        filter="customSftpDynamicInboundFilter"
+        max-fetch-size="1">
+        <!--preserve-timestamp="1">-->
+        <int:poller default="true" fixed-rate="10000" max-messages-per-poll="1"></int:poller>
+    </int-sftp:inbound-channel-adapter>
+    
+    <bean id="customSftpDynamicInboundFilter" class="com.anggiriyandi.dynamicftp.filter.CustomDynamicSftpInboundFilter">
+        <property name="processFolderPath" value="${remoteDir}" />
+    </bean>
+    
+    <bean id="dynamicFtpInboundServiceActivator" class="com.anggiriyandi.dynamicftp.service.DynamicFtpInboundServiceActivator">
+        <property name="configId" value="${configId}" />
+    </bean>
+    
+    <int:service-activator id="serviceActivator" input-channel="sftpChannel" output-channel="nullChannel" ref="dynamicFtpInboundServiceActivator" method="process">
+        <int:poller fixed-rate="3000" max-messages-per-poll="1"/>
+    </int:service-activator>
+    
+    <bean id="simplePatternFileListFilter" class="org.springframework.integration.file.filters.SimplePatternFileListFilter">
+        <constructor-arg value="*.csv"/>
+        <!--<constructor-arg value=".*\\.LON$|.*\\.lon$|.*\\.DEP$|.*\\.dep$"/>-->
+        <!--<constructor-arg value="^.*\.(txt|TXT|csv|CSV)$"/>-->
+    </bean>
+</beans>
